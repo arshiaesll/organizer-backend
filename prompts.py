@@ -15,7 +15,10 @@ RESPONSE_SCHEMA = {
                             "type": "object",
                             "properties": {
                                 "start_time": {"type": "string", "format": "date-time"},
-                                "duration": {"type": "number"},
+                                "duration": {
+                                    "type": "number",
+                                    "description": "Duration in seconds. Must be between min_study_length and max_study_length."
+                                },
                                 "session_number": {"type": "integer"}
                             },
                             "required": ["start_time", "duration", "session_number"]
@@ -25,5 +28,6 @@ RESPONSE_SCHEMA = {
                 "required": ["assignment_name", "due_date", "sessions"]
             }
         }
-    }
+    },
+    "required": ["newly_scheduled_assignments"]
 }

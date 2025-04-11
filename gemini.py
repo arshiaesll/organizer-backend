@@ -6,6 +6,7 @@ from typing import List
 from organizer import Assignment, ScheduledAssignment, TimeSlot, UserPreferences
 from datetime import datetime, timedelta, timezone
 from prompts import RESPONSE_SCHEMA
+
 # Load environment variables
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 ENV_PATH = os.path.join(BASE_DIR, ".env")
@@ -17,10 +18,7 @@ genai.configure(api_key=os.getenv("GENAI_API_KEY"))
 
 # Initialize the model
 model = genai.GenerativeModel(
-    model_name="gemini-2.0-flash",
-    generation_config=genai.GenerationConfig(
-        response_mime_type="application/json",
-    )
+    model_name="gemini-2.0-flash"
 )
 
 def schedule_assignments(assignments: List[Assignment], available_time_slots: List[TimeSlot], user_preferences: UserPreferences):
@@ -28,13 +26,9 @@ def schedule_assignments(assignments: List[Assignment], available_time_slots: Li
     Ask Gemini model to schedule unscheduled assignments into available time slots
     based on user preferences.
     """
-    # Construct the prompt
-    current_time = datetime.now()
-    
     # Format assignments for the prompt
     assignments_data = []
     for a in assignments:
-        # Convert timedelta to seconds
         completion_time_seconds = int(a.expected_completion_time.total_seconds())
         assignments_data.append({
             "name": a.name,
@@ -45,7 +39,6 @@ def schedule_assignments(assignments: List[Assignment], available_time_slots: Li
     # Format time slots for the prompt
     time_slots_data = []
     for ts in available_time_slots:
-        # Convert timedelta to seconds
         duration_seconds = int(ts.duration.total_seconds())
         time_slots_data.append({
             "start": ts.start.isoformat(),
@@ -57,15 +50,14 @@ def schedule_assignments(assignments: List[Assignment], available_time_slots: Li
     preferences_data = {
         "min_study_length": int(user_preferences.min_study_length.total_seconds()),
         "max_study_length": int(user_preferences.max_study_length.total_seconds()),
-        "min_break_length": int(user_preferences.min_break_length.total_seconds()),
-        "max_break_length": int(user_preferences.max_break_length.total_seconds())
+        "break_length": int(user_preferences.min_break_length.total_seconds())
     }
     
     # Construct the prompt
     prompt = f"""
     I need help scheduling my assignments into available time slots.
     
-    Current time: {current_time.isoformat()}
+    Current time: {datetime.now().isoformat()}
     
     Unscheduled assignments: {json.dumps(assignments_data, indent=2)}
     
@@ -77,16 +69,34 @@ def schedule_assignments(assignments: List[Assignment], available_time_slots: Li
     estimated completion times, and my preferences.
     
     IMPORTANT INSTRUCTIONS:
-    1. If an assignment's expected completion time exceeds my maximum study length ({user_preferences.max_study_length.total_seconds()} seconds), 
-       split it into multiple sessions. Each session should be at least {user_preferences.min_study_length.total_seconds()} seconds long 
-       but no longer than {user_preferences.max_study_length.total_seconds()} seconds.
+    1. CRITICAL: Each study session MUST NOT exceed {user_preferences.max_study_length.total_seconds()} seconds ({format_duration(user_preferences.max_study_length)}).
+       - If an assignment's expected completion time exceeds this limit, you MUST split it into multiple sessions.
+       - Each session should be at least {user_preferences.min_study_length.total_seconds()} seconds ({format_duration(user_preferences.min_study_length)}) long.
+       - For example, if an assignment takes 2.5 hours and the max session length is 1 hour, you must split it into at least 3 sessions.
+    
     2. For each session, specify the start time and duration in seconds.
+       - The duration MUST be between {user_preferences.min_study_length.total_seconds()} and {user_preferences.max_study_length.total_seconds()} seconds.
+       - This is a strict requirement enforced by the response schema.
+    
     3. Number the sessions sequentially (1, 2, 3, etc.) for each assignment.
+    
     4. Try to schedule sessions for the same assignment on consecutive days when possible.
+    
     5. IMPORTANT: Always include breaks between study sessions. Never schedule back-to-back study sessions.
-       - After each study session, take a break of at least {user_preferences.min_break_length.total_seconds()} seconds.
-       - Breaks should be between {user_preferences.min_break_length.total_seconds()} and {user_preferences.max_break_length.total_seconds()} seconds.
+       - After each study session, take a break of {user_preferences.min_break_length.total_seconds()} seconds ({format_duration(user_preferences.min_break_length)}).
        - For example, if you schedule a session at 10:00 AM, the next session should not start until at least {user_preferences.min_break_length.total_seconds()} seconds after the previous session ends.
+    
+    6. CRITICAL: You MUST ONLY schedule sessions within the available time slots provided above.
+       - Do NOT create new time slots or suggest times outside the available slots.
+       - If there aren't enough time slots to schedule all assignments, prioritize based on due dates.
+    
+    7. MOST IMPORTANT: You MUST schedule ALL assignments provided in the list.
+       - Every single assignment in the "Unscheduled assignments" list must have at least one session scheduled.
+    
+    8. DOUBLE-CHECK: Before submitting your response, verify that:
+       - No session exceeds {user_preferences.max_study_length.total_seconds()} seconds ({format_duration(user_preferences.max_study_length)})
+       - All sessions are within the available time slots
+       - All assignments have at least one session scheduled
     
     Respond with a JSON object containing a key 'newly_scheduled_assignments' that maps assignments to time slots.
     Each assignment should include its name, due date, expected completion time, and a list of sessions.
@@ -101,19 +111,12 @@ def schedule_assignments(assignments: List[Assignment], available_time_slots: Li
         )
     )
     
-    # Parse and return the response
     return response.text
+
 
 def create_scheduled_assignments(gemini_response: str, assignments: List[Assignment]) -> List[ScheduledAssignment]:
     """
     Parse Gemini API response and create a list of ScheduledAssignment objects.
-    
-    Args:
-        gemini_response: JSON string returned from Gemini API
-        assignments: Original list of unscheduled assignments
-        
-    Returns:
-        List of ScheduledAssignment objects with session information
     """
     # Create lookup dictionary for assignments
     assignment_dict = {a.name: a for a in assignments}
@@ -168,6 +171,19 @@ def create_scheduled_assignments(gemini_response: str, assignments: List[Assignm
     return scheduled_assignments
 
 
+def format_duration(td: timedelta) -> str:
+    """Format a timedelta as a human-readable duration string."""
+    hours = td.seconds // 3600
+    minutes = (td.seconds % 3600) // 60
+    
+    if hours > 0 and minutes > 0:
+        return f"{hours} hour{'s' if hours != 1 else ''} and {minutes} minute{'s' if minutes != 1 else ''}"
+    elif hours > 0:
+        return f"{hours} hour{'s' if hours != 1 else ''}"
+    else:
+        return f"{minutes} minute{'s' if minutes != 1 else ''}"
+
+
 if __name__ == "__main__":
     # Test example for the scheduling function
     now = datetime.now()
@@ -176,9 +192,9 @@ if __name__ == "__main__":
     
     # Create sample assignments
     assignments = [
-        Assignment("Math Homework", next_week, timedelta(hours=2)),
+        Assignment("Math Homework", next_week, timedelta(hours=2.5)),
         Assignment("Physics Lab", next_week - timedelta(days=2), timedelta(hours=1, minutes=30)),
-        Assignment("English Essay", next_week + timedelta(days=3), timedelta(hours=3))
+        Assignment("English Essay", next_week + timedelta(days=3), timedelta(hours=1, minutes=30))
     ]
     
     # Create sample time slots
@@ -191,8 +207,8 @@ if __name__ == "__main__":
     # User preferences
     preferences = UserPreferences(
         min_study_length=timedelta(minutes=30),
-        max_study_length=timedelta(hours=1.5),
-        min_break_length=timedelta(minutes=5),
+        max_study_length=timedelta(hours=1),
+        min_break_length=timedelta(minutes=15),
         max_break_length=timedelta(minutes=15)
     )
     
@@ -206,17 +222,8 @@ if __name__ == "__main__":
         # Format the start time in a readable way
         start_time_str = ts.start.strftime("%A, %B %d, %Y at %I:%M %p")
         
-        # Calculate duration in hours and minutes
-        hours = ts.duration.seconds // 3600
-        minutes = (ts.duration.seconds % 3600) // 60
-        
         # Format duration string
-        if hours > 0 and minutes > 0:
-            duration_str = f"{hours} hour{'s' if hours != 1 else ''} and {minutes} minute{'s' if minutes != 1 else ''}"
-        elif hours > 0:
-            duration_str = f"{hours} hour{'s' if hours != 1 else ''}"
-        else:
-            duration_str = f"{minutes} minute{'s' if minutes != 1 else ''}"
+        duration_str = format_duration(ts.duration)
         
         print(f"\n⏰ Time Slot {i}")
         print(f"   📅 Available: {start_time_str}")
@@ -235,16 +242,7 @@ if __name__ == "__main__":
         
         # Get session duration in hours and minutes
         session_duration = getattr(sa, 'session_duration', sa.expected_completion_time)
-        hours = session_duration.seconds // 3600
-        minutes = (session_duration.seconds % 3600) // 60
-        
-        # Format duration string
-        if hours > 0 and minutes > 0:
-            duration_str = f"{hours} hour{'s' if hours != 1 else ''} and {minutes} minute{'s' if minutes != 1 else ''}"
-        elif hours > 0:
-            duration_str = f"{hours} hour{'s' if hours != 1 else ''}"
-        else:
-            duration_str = f"{minutes} minute{'s' if minutes != 1 else ''}"
+        duration_str = format_duration(session_duration)
         
         # Get session number if available
         session_number = getattr(sa, 'session_number', 1)
