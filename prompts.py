@@ -17,7 +17,7 @@ RESPONSE_SCHEMA = {
                                 "start_time": {"type": "string", "format": "date-time"},
                                 "duration": {
                                     "type": "number",
-                                    "description": "Duration in seconds. Must be between min_study_length and max_study_length."
+                                    "description": "Duration in seconds. Must be at least min_study_length and at most max_study_length."
                                 },
                                 "session_number": {"type": "integer"}
                             },

@@ -69,34 +69,40 @@ def schedule_assignments(assignments: List[Assignment], available_time_slots: Li
     estimated completion times, and my preferences.
     
     IMPORTANT INSTRUCTIONS:
-    1. CRITICAL: Each study session MUST NOT exceed {user_preferences.max_study_length.total_seconds()} seconds ({format_duration(user_preferences.max_study_length)}).
-       - If an assignment's expected completion time exceeds this limit, you MUST split it into multiple sessions.
-       - Each session should be at least {user_preferences.min_study_length.total_seconds()} seconds ({format_duration(user_preferences.min_study_length)}) long.
-       - For example, if an assignment takes 2.5 hours and the max session length is 1 hour, you must split it into at least 3 sessions.
+    1. CRITICAL: Each study session MUST be at least {user_preferences.min_study_length.total_seconds()} seconds ({format_duration(user_preferences.min_study_length)}) long.
+       - Even if an assignment takes less time than this, you MUST still schedule it for at least {user_preferences.min_study_length.total_seconds()} seconds.
+       - For example, if an assignment takes only 20 minutes but the minimum study length is 30 minutes, schedule it for 30 minutes.
     
-    2. For each session, specify the start time and duration in seconds.
+    2. CRITICAL: Each study session MUST NOT exceed {user_preferences.max_study_length.total_seconds()} seconds ({format_duration(user_preferences.max_study_length)}).
+       - If an assignment's expected completion time exceeds this limit, you MUST split it into multiple sessions.
+       - When splitting assignments, each session MUST be at least {user_preferences.min_study_length.total_seconds()} seconds ({format_duration(user_preferences.min_study_length)}).
+       - NEVER create sessions shorter than {user_preferences.min_study_length.total_seconds()} seconds, even for the last session of a split assignment.
+    
+    3. For each session, specify the start time and duration in seconds.
        - The duration MUST be between {user_preferences.min_study_length.total_seconds()} and {user_preferences.max_study_length.total_seconds()} seconds.
        - This is a strict requirement enforced by the response schema.
     
-    3. Number the sessions sequentially (1, 2, 3, etc.) for each assignment.
+    4. Number the sessions sequentially (1, 2, 3, etc.) for each assignment.
     
-    4. Try to schedule sessions for the same assignment on consecutive days when possible.
+    5. Try to schedule sessions for the same assignment on consecutive days when possible.
     
-    5. IMPORTANT: Always include breaks between study sessions. Never schedule back-to-back study sessions.
+    6. IMPORTANT: Always include breaks between study sessions. Never schedule back-to-back study sessions.
        - After each study session, take a break of {user_preferences.min_break_length.total_seconds()} seconds ({format_duration(user_preferences.min_break_length)}).
        - For example, if you schedule a session at 10:00 AM, the next session should not start until at least {user_preferences.min_break_length.total_seconds()} seconds after the previous session ends.
     
-    6. CRITICAL: You MUST ONLY schedule sessions within the available time slots provided above.
+    7. CRITICAL: You MUST ONLY schedule sessions within the available time slots provided above.
        - Do NOT create new time slots or suggest times outside the available slots.
        - If there aren't enough time slots to schedule all assignments, prioritize based on due dates.
     
-    7. MOST IMPORTANT: You MUST schedule ALL assignments provided in the list.
+    8. MOST IMPORTANT: You MUST schedule ALL assignments provided in the list.
        - Every single assignment in the "Unscheduled assignments" list must have at least one session scheduled.
     
-    8. DOUBLE-CHECK: Before submitting your response, verify that:
+    9. DOUBLE-CHECK: Before submitting your response, verify that:
+       - Every session is at least {user_preferences.min_study_length.total_seconds()} seconds ({format_duration(user_preferences.min_study_length)})
        - No session exceeds {user_preferences.max_study_length.total_seconds()} seconds ({format_duration(user_preferences.max_study_length)})
        - All sessions are within the available time slots
        - All assignments have at least one session scheduled
+       - When splitting assignments, all sessions (including the last one) meet the minimum study length
     
     Respond with a JSON object containing a key 'newly_scheduled_assignments' that maps assignments to time slots.
     Each assignment should include its name, due date, expected completion time, and a list of sessions.
@@ -190,24 +196,66 @@ if __name__ == "__main__":
     tomorrow = now + timedelta(days=1)
     next_week = now + timedelta(days=7)
     
-    # Create sample assignments
+    # Create a more complicated set of assignments with varying durations and due dates
     assignments = [
-        Assignment("Math Homework", next_week, timedelta(hours=2.5)),
-        Assignment("Physics Lab", next_week - timedelta(days=2), timedelta(hours=1, minutes=30)),
-        Assignment("English Essay", next_week + timedelta(days=3), timedelta(hours=1, minutes=30))
+        # Short assignments due soon
+        Assignment("Math Quiz Prep", tomorrow + timedelta(days=1), timedelta(minutes=45)),
+        Assignment("History Reading", tomorrow + timedelta(days=2), timedelta(minutes=30)),
+        
+        # Medium assignments due in a few days
+        Assignment("Physics Lab Report", tomorrow + timedelta(days=3), timedelta(hours=1, minutes=15)),
+        Assignment("Chemistry Homework", tomorrow + timedelta(days=4), timedelta(hours=1)),
+        
+        # Longer assignments due next week
+        Assignment("Research Paper", next_week, timedelta(hours=3)),
+        Assignment("Computer Science Project", next_week - timedelta(days=1), timedelta(hours=2, minutes=30)),
+        Assignment("Literature Essay", next_week + timedelta(days=1), timedelta(hours=2)),
+        
+        # Very short assignments
+        Assignment("Spanish Vocabulary", tomorrow, timedelta(minutes=20)),
+        Assignment("Biology Notes Review", tomorrow + timedelta(days=1), timedelta(minutes=25))
     ]
     
-    # Create sample time slots
+    # Create a more complicated set of time slots with varying durations and times
     time_slots = [
+        # Morning slots
+        TimeSlot(tomorrow.replace(hour=8, minute=0), timedelta(hours=1)),
+        TimeSlot(tomorrow.replace(hour=9, minute=30), timedelta(hours=1, minutes=30)),
+        
+        # Afternoon slots
         TimeSlot(tomorrow.replace(hour=14, minute=0), timedelta(hours=2)),
-        TimeSlot(tomorrow.replace(hour=18, minute=0), timedelta(hours=1, minutes=30)),
-        TimeSlot((tomorrow + timedelta(days=1)).replace(hour=10, minute=0), timedelta(hours=5))
+        TimeSlot(tomorrow.replace(hour=16, minute=30), timedelta(hours=1)),
+        
+        # Evening slots
+        TimeSlot(tomorrow.replace(hour=19, minute=0), timedelta(hours=1, minutes=30)),
+        
+        # Next day slots
+        TimeSlot((tomorrow + timedelta(days=1)).replace(hour=10, minute=0), timedelta(hours=2)),
+        TimeSlot((tomorrow + timedelta(days=1)).replace(hour=13, minute=0), timedelta(hours=1)),
+        TimeSlot((tomorrow + timedelta(days=1)).replace(hour=15, minute=0), timedelta(hours=1, minutes=30)),
+        
+        # Day 3 slots
+        TimeSlot((tomorrow + timedelta(days=2)).replace(hour=9, minute=0), timedelta(hours=1)),
+        TimeSlot((tomorrow + timedelta(days=2)).replace(hour=11, minute=0), timedelta(hours=2)),
+        TimeSlot((tomorrow + timedelta(days=2)).replace(hour=14, minute=0), timedelta(hours=1)),
+        
+        # Day 4 slots
+        TimeSlot((tomorrow + timedelta(days=3)).replace(hour=10, minute=0), timedelta(hours=1, minutes=30)),
+        TimeSlot((tomorrow + timedelta(days=3)).replace(hour=12, minute=30), timedelta(hours=1)),
+        
+        # Day 5 slots (weekend)
+        TimeSlot((tomorrow + timedelta(days=4)).replace(hour=9, minute=0), timedelta(hours=3)),
+        TimeSlot((tomorrow + timedelta(days=4)).replace(hour=13, minute=0), timedelta(hours=2)),
+        
+        # Day 6 slots (weekend)
+        TimeSlot((tomorrow + timedelta(days=5)).replace(hour=10, minute=0), timedelta(hours=2, minutes=30)),
+        TimeSlot((tomorrow + timedelta(days=5)).replace(hour=15, minute=0), timedelta(hours=1, minutes=30))
     ]
     
     # User preferences
     preferences = UserPreferences(
         min_study_length=timedelta(minutes=30),
-        max_study_length=timedelta(hours=1),
+        max_study_length=timedelta(hours=1.5),
         min_break_length=timedelta(minutes=15),
         max_break_length=timedelta(minutes=15)
     )
