@@ -254,15 +254,16 @@ if __name__ == "__main__":
     
     # User preferences
     preferences = UserPreferences(
-        min_study_length=timedelta(minutes=30),
-        max_study_length=timedelta(hours=1.5),
+        min_study_length=timedelta(minutes=60),
+        max_study_length=timedelta(hours=1),
         min_break_length=timedelta(minutes=15),
         max_break_length=timedelta(minutes=15)
     )
     
+    
     # Test the scheduling function
     result = schedule_assignments(assignments, time_slots, preferences)
-    print(json.dumps(json.loads(result), indent=2))
+    # print(json.dumps(json.loads(result), indent=2))
     
     # Print available time slots in a nice format
     print("\n=== AVAILABLE TIME SLOTS ===")
@@ -280,7 +281,17 @@ if __name__ == "__main__":
     
     # Test creating scheduled assignments from the response
     scheduled_assignments = create_scheduled_assignments(result, assignments)
-    
+    # print(json.dumps(scheduled_assignments, indent=2))
+    # Format assignments for display
+    print("\n=== ASSIGNMENTS TO SCHEDULE ===")
+    for i, assignment in enumerate(assignments, 1):
+        due_date_str = assignment.due_date.strftime("%A, %B %d, %Y")
+        duration_str = format_duration(assignment.expected_completion_time)
+        print(f"\n📚 Assignment {i}: {assignment.name}")
+        print(f"   ⏱️  Expected Duration: {duration_str}")
+        print(f"   📌 Due by: {due_date_str}")
+        print(f"   {'─' * 50}")
+
     # Print in a more human-readable format
     print("\n=== SCHEDULED ASSIGNMENTS ===")
     for sa in scheduled_assignments:

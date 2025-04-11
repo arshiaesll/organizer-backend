@@ -1,0 +1,76 @@
+{
+  "assignments": [
+    {
+      "name": "Stats HW",
+      "due_date": "2025-04-14T14:00:31.017000",
+      "expected_completion_time": 14400.0
+    },
+    {
+      "name": "CSCE 790 project",
+      "due_date": "2025-04-18T14:17:19.561000",
+      "expected_completion_time": 10800.0
+    }
+  ],
+  "time_slots": [
+    {
+      "start": "2025-04-12T09:00:29.576000",
+      "duration": 10800.0,
+      "id": "37bb712d-3cf0-427c-b70e-dcd2636895fd"
+    },
+    {
+      "start": "2025-04-12T13:00:55.098000",
+      "duration": 7200.0,
+      "id": "74d03335-1bb8-4484-80cb-a4472cd8ea7f"
+    },
+    {
+      "start": "2025-04-13T09:00:16.862000",
+      "duration": 10800.0,
+      "id": "d69eab8d-ce70-4d2a-9488-24c317992937"
+    },
+    {
+      "start": "2025-04-13T15:00:41.047000",
+      "duration": 7200.0,
+      "id": "dbe2832b-65e5-4017-85a6-63862809b2bd"
+    }
+  ],
+  "scheduled_assignments": [
+    {
+      "name": "Stats HW",
+      "due_date": "2025-04-14T14:00:31.017000",
+      "expected_completion_time": 14400.0,
+      "assigned_date": "2025-04-12T09:00:29.576000+00:00",
+      "session_duration": 5400.0,
+      "session_number": 1
+    },
+    {
+      "name": "Stats HW",
+      "due_date": "2025-04-14T14:00:31.017000",
+      "expected_completion_time": 14400.0,
+      "assigned_date": "2025-04-13T09:00:16.862000+00:00",
+      "session_duration": 5400.0,
+      "session_number": 2
+    },
+    {
+      "name": "Stats HW",
+      "due_date": "2025-04-14T14:00:31.017000",
+      "expected_completion_time": 14400.0,
+      "assigned_date": "2025-04-13T15:00:41.047000+00:00",
+      "session_duration": 3600.0,
+      "session_number": 3
+    },
+    {
+      "name": "CSCE 790 project",
+      "due_date": "2025-04-18T14:17:19.561000",
+      "expected_completion_time": 10800.0,
+      "assigned_date": "2025-04-12T13:00:55.098000+00:00",
+      "session_duration": 5400.0,
+      "session_number": 1
+    }
+  ],
+  "preferences": {
+    "min_study_length": 1800.0,
+    "max_study_length": 5400.0,
+    "min_break_length": 300.0,
+    "max_break_length": 900.0
+  }
+}
