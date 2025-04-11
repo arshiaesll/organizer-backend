@@ -1,0 +1,69 @@
+
+
+Assignment:
+    - name
+    - due date (type Date with time)
+    - expected completion time
+    
+
+Scheduled Assignment inheret from Assignment:
+    - Inherets from assignemt
+    - Has assigned date
+
+TimeSlot class:
+    - Start: the time that they are Available
+    - Duration: the duration
+
+
+- User preferences class
+    - minimum study length
+    - max study length
+    - max break length
+    - min break length
+
+list1 = assignments are scheduled / locked (Scheduled Assignment)
+list2 = assignments that need to be scheduled (Assignment)
+list3 = List of timeslots (We are only passing those that are Available)
+
+
+
+// typescript equivelant
+
+
+export type Assignment = {
+  id: string;
+  title: string;
+  description: string;
+  completed: boolean;
+  due: Date; // date assignment is due
+  expectedTime: number; // time expected to complete assignment (in milliseconds)
+  course: string; // ex: CSCE 350
+};
+
+export type ScheduledAssignment = Assignment & {
+  expectedStart: Date; // date expected to start assignment
+};
+
+export type Timeslot = {
+  start: Date;
+  duration: number;
+};
+
+export type UserPreferences = {
+  minimumStudySession: number;
+  maximumStudySession: number;
+  minimumBreak: number;
+  maximumBreak: number;
+};
+
+export type GeminiPrompt = {
+  scheduledAssignments: ScheduledAssignment[];
+  timeslots: Timeslot[];
+  assignments: Assignment[];
+};
+
+export type GeminiResponse = ScheduledAssignment[];
+
+
+
+
