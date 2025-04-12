@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QPushButton, QScrollArea, QSplitter, QFrame, QLineEdit,
     QDateTimeEdit, QSpinBox, QFormLayout, QMessageBox, QComboBox,
-    QGridLayout, QDialog, QGroupBox
+    QGridLayout, QDialog, QGroupBox, QSizePolicy, QSpacerItem
 )
 from PySide6.QtCore import Qt, QDateTime, QDate, QTime, QSize
 from PySide6.QtGui import QColor, QPalette, QFont
@@ -193,14 +193,18 @@ class ScheduledAssignmentItem(QFrame):
             assignment_name += f" (Session {session_number})"
             
         self.name_label = QLabel(assignment_name)
-        self.name_label.setFont(QFont("Arial", 8, QFont.Bold))
+        self.name_label.setFont(QFont("Arial", 9, QFont.Bold))
+        self.name_label.setStyleSheet("color: black;")
         self.name_label.setWordWrap(True)
+        self.name_label.setAlignment(Qt.AlignCenter)
         
         self.time_label = QLabel(f"⏰ {time_str}")
         self.time_label.setFont(QFont("Arial", 8))
+        self.time_label.setStyleSheet("color: black;")
         
         self.duration_label = QLabel(f"⏱️ {format_duration(session_duration)}")
         self.duration_label.setFont(QFont("Arial", 8))
+        self.duration_label.setStyleSheet("color: black;")
         
         # Overlap indicator (initially hidden)
         self.overlap_label = QLabel("⚠️ In available time slot")
@@ -213,6 +217,7 @@ class ScheduledAssignmentItem(QFrame):
         layout.addWidget(self.time_label)
         layout.addWidget(self.duration_label)
         layout.addWidget(self.overlap_label)
+        layout.addStretch()
     
     def set_overlap_with_slot(self, time_slot: TimeSlot):
         """Set that this assignment overlaps with a time slot"""
@@ -399,7 +404,7 @@ class DayWidget(QFrame):
                 print(f"Creating multi-hour container for {scheduled_assignment.name}")
                 container.setFrameStyle(QFrame.Box | QFrame.Raised)
                 container.setLineWidth(1)
-                container.setStyleSheet(f"background-color: {color}; border-radius: 5px; border: 1px solid #666;")
+                container.setStyleSheet(f"background-color: {color}; border-radius: 5px;")
                 
                 container_layout = QVBoxLayout(container)
                 container_layout.setContentsMargins(5, 5, 5, 5)
@@ -660,9 +665,9 @@ class DayWidget(QFrame):
 class CalendarView(QWidget):
     """Calendar view widget to display scheduled assignments and time slots"""
     
-    def __init__(self, parent=None, on_edit_slot=None, on_delete_slot=None):
+    def __init__(self, parent=None, on_edit_slot=None, on_delete_slot=None, color_manager: ColorManager = None):
         super().__init__(parent)
-        self.color_manager = ColorManager()
+        self.color_manager = color_manager or ColorManager()
         self.on_edit_slot = on_edit_slot
         self.on_delete_slot = on_delete_slot
         self.current_week_start = self.get_current_week_start()
@@ -818,7 +823,7 @@ class CalendarView(QWidget):
         self._scheduled_assignments = scheduled_assignments
         
         # Debug output
-        print(f"Displaying {len(scheduled_assignments)} scheduled assignments")
+        print(f"CalendarView: Displaying {len(scheduled_assignments)} scheduled assignments")
         
         # Get the date range for the current view
         start_date = self.current_week_start.date()
@@ -854,6 +859,9 @@ class CalendarView(QWidget):
         """Display time slots on the calendar"""
         self._time_slots = time_slots
         
+        # Debug output
+        print(f"CalendarView: Displaying {len(time_slots)} time slots")
+        
         # Get the date range for the current view
         start_date = self.current_week_start.date()
         end_date = (self.current_week_start + timedelta(days=6)).date()
@@ -885,12 +893,25 @@ class CalendarView(QWidget):
 
 
 class AssignmentDialog(QDialog):
-    """Dialog for adding a new assignment"""
+    """Dialog for adding or editing an assignment"""
     
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, assignment=None):
         super().__init__(parent)
-        self.setWindowTitle("Add Assignment")
+        self.editing = assignment is not None
+        self.original_assignment = assignment
+        self.setWindowTitle("Edit Assignment" if self.editing else "Add Assignment")
         self.setup_ui()
+        
+        # Fill fields if editing
+        if self.editing:
+            self.name_edit.setText(assignment.name)
+            self.due_date_edit.setDateTime(QDateTime(assignment.due_date))
+            
+            # Set hours and minutes
+            hours = int(assignment.expected_completion_time.total_seconds() // 3600)
+            minutes = int((assignment.expected_completion_time.total_seconds() % 3600) // 60)
+            self.hours_spin.setValue(hours)
+            self.minutes_spin.setValue(minutes)
     
     def setup_ui(self):
         """Set up the user interface"""
@@ -921,11 +942,23 @@ class AssignmentDialog(QDialog):
         
         layout.addRow("Expected Time:", time_layout)
         
-        # Add button
-        self.add_button = QPushButton("Add")
-        self.add_button.clicked.connect(self.accept)
-        self.add_button.setStyleSheet(DIALOG_BUTTON_STYLE)
-        layout.addRow("", self.add_button)
+        # Button layout
+        button_layout = QHBoxLayout()
+        
+        # Add/Save button
+        self.action_button = QPushButton("Save" if self.editing else "Add")
+        self.action_button.clicked.connect(self.accept)
+        self.action_button.setStyleSheet(DIALOG_BUTTON_STYLE)
+        
+        # Cancel button (only for edit mode)
+        if self.editing:
+            self.cancel_button = QPushButton("Cancel")
+            self.cancel_button.clicked.connect(self.reject)
+            self.cancel_button.setStyleSheet(get_simple_button_style("#9E9E9E"))  # Gray
+            button_layout.addWidget(self.cancel_button)
+        
+        button_layout.addWidget(self.action_button)
+        layout.addRow("", button_layout)
     
     def get_assignment(self) -> Assignment:
         """Get the assignment from the dialog"""
@@ -1113,134 +1146,110 @@ class PreferencesDialog(QDialog):
 
 
 class AssignmentListDialog(QDialog):
-    """Dialog for displaying a list of all assignments"""
+    """Dialog to view all assignments"""
     
-    def __init__(self, assignments, scheduled_assignments, parent=None):
+    def __init__(self, assignments, scheduled_assignments, parent=None, on_edit=None):
         super().__init__(parent)
         self.assignments = assignments
         self.scheduled_assignments = scheduled_assignments
+        self.on_edit = on_edit
         self.setWindowTitle("All Assignments")
-        self.setMinimumWidth(600)
-        self.setMinimumHeight(400)
+        self.resize(500, 600)
         self.setup_ui()
     
     def setup_ui(self):
         """Set up the user interface"""
         layout = QVBoxLayout(self)
         
-        # Create a scroll area for the assignments
+        # Create a scroll area
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
-        scroll_widget = QWidget()
-        scroll_layout = QVBoxLayout(scroll_widget)
         
-        # Group assignments - first scheduled ones, then unscheduled
-        scheduled_assignment_names = set(sa.name for sa in self.scheduled_assignments)
+        # Create a widget to hold the assignments
+        scroll_content = QWidget()
+        self.assignments_layout = QVBoxLayout(scroll_content)
         
-        # Create section for scheduled assignments
-        if self.scheduled_assignments:
-            scheduled_label = QLabel("Scheduled Assignments")
-            scheduled_label.setFont(QFont("Arial", 12, QFont.Bold))
-            scroll_layout.addWidget(scheduled_label)
-            
-            # Group scheduled assignments by name (some might have multiple sessions)
-            scheduled_by_name = {}
-            for sa in self.scheduled_assignments:
-                if sa.name not in scheduled_by_name:
-                    scheduled_by_name[sa.name] = []
-                scheduled_by_name[sa.name].append(sa)
-            
-            # Add each scheduled assignment
-            for name, assignments in scheduled_by_name.items():
-                # Find the original assignment to get its details
-                original = next((a for a in self.assignments if a.name == name), None)
-                
-                frame = QFrame()
-                frame.setFrameStyle(QFrame.Box | QFrame.Raised)
-                frame.setLineWidth(1)
-                frame.setStyleSheet(f"background-color: {SCHEDULED_BG_COLOR}; border-radius: 5px; margin: 2px;")
-                
-                frame_layout = QVBoxLayout(frame)
-                
-                # Assignment title
-                title_label = QLabel(name)
-                title_label.setFont(QFont("Arial", 11, QFont.Bold))
-                frame_layout.addWidget(title_label)
-                
-                # Original due date and estimated time
-                if original:
-                    due_date = original.due_date.strftime("%a, %b %d, %Y at %I:%M %p")
-                    est_time = format_duration(original.expected_completion_time)
-                    details = QLabel(f"Due: {due_date}\nEstimated time: {est_time}")
-                    details.setFont(QFont("Arial", 9))
-                    frame_layout.addWidget(details)
-                
-                # Scheduled sessions
-                sessions_label = QLabel(f"Scheduled {len(assignments)} session(s):")
-                sessions_label.setFont(QFont("Arial", 9, QFont.Bold))
-                frame_layout.addWidget(sessions_label)
-                
-                # List each session
-                for i, sa in enumerate(assignments):
-                    session_time = sa.assigned_date.strftime("%a, %b %d at %I:%M %p")
-                    session_duration = format_duration(getattr(sa, 'session_duration', sa.expected_completion_time))
-                    session_label = QLabel(f"Session {i+1}: {session_time} ({session_duration})")
-                    session_label.setFont(QFont("Arial", 9))
-                    frame_layout.addWidget(session_label)
-                
-                scroll_layout.addWidget(frame)
-        
-        # Create section for unscheduled assignments
-        unscheduled = [a for a in self.assignments if a.name not in scheduled_assignment_names]
-        if unscheduled:
-            unscheduled_label = QLabel("Unscheduled Assignments")
-            unscheduled_label.setFont(QFont("Arial", 12, QFont.Bold))
-            scroll_layout.addWidget(unscheduled_label)
-            
-            # Add each unscheduled assignment
-            for a in unscheduled:
-                frame = QFrame()
-                frame.setFrameStyle(QFrame.Box | QFrame.Raised)
-                frame.setLineWidth(1)
-                frame.setStyleSheet(f"background-color: {UNSCHEDULED_BG_COLOR}; border-radius: 5px; margin: 2px;")
-                
-                frame_layout = QVBoxLayout(frame)
-                
-                # Assignment title
-                title_label = QLabel(a.name)
-                title_label.setFont(QFont("Arial", 11, QFont.Bold))
-                frame_layout.addWidget(title_label)
-                
-                # Due date and estimated time
-                due_date = a.due_date.strftime("%a, %b %d, %Y at %I:%M %p")
-                est_time = format_duration(a.expected_completion_time)
-                details = QLabel(f"Due: {due_date}\nEstimated time: {est_time}\nStatus: Not scheduled")
-                details.setFont(QFont("Arial", 9))
-                frame_layout.addWidget(details)
-                
-                scroll_layout.addWidget(frame)
-        
-        # If no assignments
+        # Add assignments
         if not self.assignments:
-            no_assignments = QLabel("No assignments created yet.")
+            no_assignments = QLabel("No assignments added yet")
             no_assignments.setAlignment(Qt.AlignCenter)
-            no_assignments.setFont(QFont("Arial", 12))
-            scroll_layout.addWidget(no_assignments)
+            self.assignments_layout.addWidget(no_assignments)
+        else:
+            # Sort assignments by due date
+            sorted_assignments = sorted(self.assignments, key=lambda a: a.due_date)
+            
+            for assignment in sorted_assignments:
+                # Check if this assignment is scheduled
+                is_scheduled = any(sa.name == assignment.name for sa in self.scheduled_assignments)
+                
+                # Create a frame for the assignment
+                frame = QFrame()
+                frame.setFrameShape(QFrame.StyledPanel)
+                frame.setLineWidth(1)
+                frame_layout = QVBoxLayout(frame)
+                
+                # Create header layout with title and edit button
+                header_layout = QHBoxLayout()
+                
+                # Title
+                title_label = QLabel(f"<b>{assignment.name}</b>")
+                title_label.setStyleSheet("font-size: 16px;")
+                header_layout.addWidget(title_label)
+                
+                # Add spacer to push edit button to the right
+                header_layout.addItem(QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum))
+                
+                # Edit button
+                if self.on_edit:
+                    edit_button = QPushButton("Edit")
+                    edit_button.setStyleSheet(get_simple_button_style("#2196F3"))  # Blue
+                    edit_button.setMaximumWidth(60)
+                    edit_button.clicked.connect(lambda checked, a=assignment: self.on_edit(a))
+                    header_layout.addWidget(edit_button)
+                
+                frame_layout.addLayout(header_layout)
+                
+                # Add due date
+                due_date = QLabel(f"Due: {assignment.due_date.strftime('%Y-%m-%d %H:%M')}")
+                frame_layout.addWidget(due_date)
+                
+                # Add expected completion time
+                hours = int(assignment.expected_completion_time.total_seconds() // 3600)
+                minutes = int((assignment.expected_completion_time.total_seconds() % 3600) // 60)
+                
+                time_text = ""
+                if hours > 0:
+                    time_text += f"{hours} hour{'s' if hours != 1 else ''}"
+                if minutes > 0:
+                    if time_text:
+                        time_text += " "
+                    time_text += f"{minutes} minute{'s' if minutes != 1 else ''}"
+                
+                expected_time = QLabel(f"Expected Time: {time_text}")
+                frame_layout.addWidget(expected_time)
+                
+                # Add status
+                status_label = QLabel(f"Status: {'Scheduled' if is_scheduled else 'Not Scheduled'}")
+                status_label.setStyleSheet(f"color: {'#4CAF50' if is_scheduled else '#F44336'}")
+                frame_layout.addWidget(status_label)
+                
+                self.assignments_layout.addWidget(frame)
         
-        scroll_layout.addStretch()
-        scroll_area.setWidget(scroll_widget)
+        scroll_area.setWidget(scroll_content)
         layout.addWidget(scroll_area)
         
         # Close button
-        self.close_button = QPushButton("Close")
-        self.close_button.clicked.connect(self.accept)
-        self.close_button.setStyleSheet(DIALOG_BUTTON_STYLE)
+        close_button = QPushButton("Close")
+        close_button.clicked.connect(self.accept)
+        close_button.setStyleSheet(DIALOG_BUTTON_STYLE)
+        close_button.setMaximumWidth(120)
         
-        # Add button to bottom
-        button_layout = QHBoxLayout()
-        button_layout.addStretch()
-        button_layout.addWidget(self.close_button)
-        layout.addLayout(button_layout)
+        btn_layout = QHBoxLayout()
+        btn_layout.addItem(QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum))
+        btn_layout.addWidget(close_button)
+        btn_layout.addItem(QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum))
+        
+        layout.addLayout(btn_layout)
 
 
 class MainWindow(QMainWindow):
@@ -1257,6 +1266,9 @@ class MainWindow(QMainWindow):
             min_break_length=timedelta(minutes=5),
             max_break_length=timedelta(minutes=15)
         )
+        
+        # Create a global color manager to ensure consistent colors
+        self.color_manager = ColorManager()
         
         self.data_file = "jamaai_data.json"
         
@@ -1337,10 +1349,11 @@ class MainWindow(QMainWindow):
         controls_layout.addWidget(timeslot_group)
         controls_layout.addWidget(schedule_group)
         
-        # Calendar view
+        # Calendar view - pass the global color manager
         self.calendar_view = CalendarView(
-            on_edit_slot=self.edit_time_slot,
-            on_delete_slot=self.delete_time_slot
+            on_edit_slot=self.edit_assignment,
+            on_delete_slot=self.delete_assignment,
+            color_manager=self.color_manager
         )
         
         # Add to main layout
@@ -1533,6 +1546,8 @@ class MainWindow(QMainWindow):
             assignment = dialog.get_assignment()
             self.assignments.append(assignment)
             self.statusBar().showMessage(f"Added assignment: {assignment.name}")
+            
+            # Make sure to preserve scheduled assignments while updating display
             self.update_display()
             self.save_data()
     
@@ -1543,81 +1558,68 @@ class MainWindow(QMainWindow):
             time_slot = dialog.get_time_slot()
             self.time_slots.append(time_slot)
             self.statusBar().showMessage(f"Added time slot: {time_slot.start.strftime('%Y-%m-%d %H:%M')}")
+            
+            # Make sure to preserve scheduled assignments while updating display
             self.update_display()
             self.save_data()
     
-    def edit_time_slot(self, time_slot: TimeSlot):
-        """Edit an existing time slot"""
-        dialog = TimeSlotDialog(self)
+    def edit_assignment(self, assignment):
+        """Edit an existing assignment"""
+        # Check if this assignment is already scheduled
+        is_scheduled = any(sa.name == assignment.name for sa in self.scheduled_assignments)
         
-        # Set initial values from existing time slot
-        dialog.date_edit.setDateTime(QDateTime(time_slot.start))
+        if is_scheduled:
+            warning = QMessageBox.warning(
+                self,
+                "Assignment Scheduled",
+                "This assignment is already scheduled. Editing it may affect your schedule.\nDo you want to continue?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if warning != QMessageBox.Yes:
+                return
         
-        hours = int(time_slot.duration.total_seconds() // 3600)
-        minutes = int((time_slot.duration.total_seconds() % 3600) // 60)
-        
-        dialog.hours_spin.setValue(hours)
-        dialog.minutes_spin.setValue(minutes)
-        
+        dialog = AssignmentDialog(self, assignment)
         if dialog.exec_():
-            # Get updated values
-            updated_slot = dialog.get_time_slot()
+            updated_assignment = dialog.get_assignment()
             
-            # Find and replace the time slot
-            for i, slot in enumerate(self.time_slots):
-                if slot is time_slot:  # Same object
-                    self.time_slots[i] = updated_slot
+            # Get the original assignment name before updating (for scheduled assignment tracking)
+            original_name = assignment.name
+            
+            # Find and replace the assignment
+            for i, a in enumerate(self.assignments):
+                if a is assignment:  # Same object
+                    self.assignments[i] = updated_assignment
                     break
             
-            self.statusBar().showMessage(f"Updated time slot: {updated_slot.start.strftime('%Y-%m-%d %H:%M')}")
-            self.update_display()
+            # Update scheduled assignments if needed
+            if is_scheduled:
+                # Update name and expected completion time in scheduled assignments
+                for sa in self.scheduled_assignments:
+                    if sa.name == original_name:
+                        sa.name = updated_assignment.name
+                        sa.due_date = updated_assignment.due_date
+                        sa.expected_completion_time = updated_assignment.expected_completion_time
+            
+            self.statusBar().showMessage(f"Updated assignment: {updated_assignment.name}")
+            
+            # Save immediately after editing
             self.save_data()
+            
+            # Then update the display
+            self.update_display()
     
-    def delete_time_slot(self, time_slot: TimeSlot):
-        """Delete a time slot"""
-        # Create a simplified version to check for overlap
-        has_assignments = False
+    def delete_assignment(self, assignment):
+        """Delete an existing assignment"""
+        # Remove the assignment from the list
+        self.assignments = [a for a in self.assignments if a is not assignment]
         
-        # Check if any assignments are scheduled in this time slot
-        for sa in self.scheduled_assignments:
-            slot_start = time_slot.start
-            slot_end = slot_start + time_slot.duration
-            assignment_start = sa.assigned_date
-            assignment_end = assignment_start + getattr(sa, 'session_duration', sa.expected_completion_time)
-            
-            # Make sure both are naive for comparison
-            if slot_start.tzinfo is not None:
-                slot_start = slot_start.replace(tzinfo=None)
-            if slot_end.tzinfo is not None:
-                slot_end = slot_end.replace(tzinfo=None)
-            if assignment_start.tzinfo is not None:
-                assignment_start = assignment_start.replace(tzinfo=None)
-            if assignment_end.tzinfo is not None:
-                assignment_end = assignment_end.replace(tzinfo=None)
-            
-            # Check for overlap using the helper method
-            if max(slot_start, assignment_start) < min(slot_end, assignment_end):
-                has_assignments = True
-                break
-                
-        confirm_text = "Are you sure you want to delete this time slot?"
-        if has_assignments:
-            confirm_text = "This time slot has assignments scheduled in it. Deleting it may affect your schedule.\n\nAre you sure you want to delete it?"
-            
-        confirm = QMessageBox.question(
-            self,
-            "Confirm Deletion",
-            confirm_text,
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.No
-        )
+        # Update scheduled assignments if needed
+        self.scheduled_assignments = [sa for sa in self.scheduled_assignments if sa.name != assignment.name]
         
-        if confirm == QMessageBox.Yes:
-            # Remove the time slot
-            self.time_slots = [slot for slot in self.time_slots if slot is not time_slot]
-            self.statusBar().showMessage("Time slot deleted")
-            self.update_display()
-            self.save_data()
+        self.statusBar().showMessage(f"Deleted assignment: {assignment.name}")
+        self.update_display()
+        self.save_data()
     
     def edit_preferences(self):
         """Edit user preferences"""
@@ -1745,15 +1747,19 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage("Schedule reset")
             self.save_data()
     
-    def update_display(self):
-        """Update the calendar display"""
-        self.calendar_view.display_time_slots(self.time_slots)
-        self.calendar_view.display_scheduled_assignments(self.scheduled_assignments)
-
     def view_assignments(self):
         """Open a dialog to view all assignments"""
-        dialog = AssignmentListDialog(self.assignments, self.scheduled_assignments, self)
-        dialog.exec_()
+        dialog = AssignmentListDialog(self.assignments, self.scheduled_assignments, self, self.edit_assignment)
+        result = dialog.exec_()
+        
+        # Refresh the UI after the dialog closes in case edits were made
+        self.update_display()
+        
+    def update_display(self):
+        """Update the calendar display"""
+        print(f"MainWindow: Updating display with {len(self.time_slots)} time slots and {len(self.scheduled_assignments)} scheduled assignments")
+        self.calendar_view.display_time_slots(self.time_slots)
+        self.calendar_view.display_scheduled_assignments(self.scheduled_assignments)
 
 
 if __name__ == "__main__":

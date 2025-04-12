@@ -1,54 +1,38 @@
 {
   "assignments": [
     {
-      "name": "STATS HW9",
-      "due_date": "2025-04-14T11:02:22.261000",
+      "name": "CSCE 311 Project 4",
+      "due_date": "2025-04-17T23:41:36.400000",
       "expected_completion_time": 10800.0
+    },
+    {
+      "name": "4/1 Orgo Notes ",
+      "due_date": "2025-04-16T23:45:28.951000",
+      "expected_completion_time": 3600.0
+    },
+    {
+      "name": "4/3 Orgo Notes",
+      "due_date": "2025-04-16T11:46:00.415000",
+      "expected_completion_time": 3600.0
+    },
+    {
+      "name": "4/8 Orgo Notes",
+      "due_date": "2025-04-16T11:46:20.966000",
+      "expected_completion_time": 3600.0
+    },
+    {
+      "name": "Stats HW 9",
+      "due_date": "2025-04-16T11:46:57.182000",
+      "expected_completion_time": 14400.0
+    },
+    {
+      "name": "Capstone Catch up",
+      "due_date": "2025-04-13T23:59:28.065000",
+      "expected_completion_time": 1800.0
     }
   ],
-  "time_slots": [
-    {
-      "start": "2025-04-13T06:00:21.498000",
-      "duration": 3600.0,
-      "id": "d65b98a2-8d01-4344-884f-3459d0b9ae62"
-    },
-    {
-      "start": "2025-04-14T11:00:10.765000",
-      "duration": 7200.0,
-      "id": "835bf431-b66c-48a9-9a1e-7ea4bd5995c6"
-    },
-    {
-      "start": "2025-04-13T10:00:42.631000",
-      "duration": 7200.0,
-      "id": "2ed5e2fd-b964-4ceb-af46-432a3fb31fc6"
-    }
-  ],
-  "scheduled_assignments": [
-    {
-      "name": "STATS HW9",
-      "due_date": "2025-04-14T11:02:22.261000",
-      "expected_completion_time": 10800.0,
-      "assigned_date": "2025-04-13T06:00:21.498000",
-      "session_duration": 3600.0,
-      "session_number": 1
-    },
-    {
-      "name": "STATS HW9",
-      "due_date": "2025-04-14T11:02:22.261000",
-      "expected_completion_time": 10800.0,
-      "assigned_date": "2025-04-13T10:05:42.631000",
-      "session_duration": 5400.0,
-      "session_number": 2
-    },
-    {
-      "name": "STATS HW9",
-      "due_date": "2025-04-14T11:02:22.261000",
-      "expected_completion_time": 10800.0,
-      "assigned_date": "2025-04-14T11:00:10.765000",
-      "session_duration": 1800.0,
-      "session_number": 3
-    }
-  ],
+  "time_slots": [],
+  "scheduled_assignments": [],
   "preferences": {
     "min_study_length": 1800.0,
     "max_study_length": 5400.0,
