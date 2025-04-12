@@ -11,7 +11,7 @@ from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QLabel, QPushButton, QScrollArea, QSplitter, QFrame, QLineEdit,
     QDateTimeEdit, QSpinBox, QFormLayout, QMessageBox, QComboBox,
-    QGridLayout, QDialog
+    QGridLayout, QDialog, QGroupBox
 )
 from PySide6.QtCore import Qt, QDateTime, QDate, QTime, QSize
 from PySide6.QtGui import QColor, QPalette, QFont
@@ -53,6 +53,7 @@ class TimeSlotItem(QFrame):
         self.time_slot = time_slot
         self.on_edit = on_edit
         self.on_delete = on_delete
+        self.has_assignments = False
         
         self.setFrameStyle(QFrame.Box | QFrame.Raised)
         self.setLineWidth(1)
@@ -80,6 +81,12 @@ class TimeSlotItem(QFrame):
         self.duration_label = QLabel(f"⏱️ {duration_str}")
         self.duration_label.setFont(QFont("Arial", 8))
         
+        # Assignment indicator (initially hidden)
+        self.assignment_label = QLabel("📝 Has assignments")
+        self.assignment_label.setFont(QFont("Arial", 7))
+        self.assignment_label.setStyleSheet("color: #FF5722;")
+        self.assignment_label.setVisible(False)
+        
         # Add buttons layout
         button_layout = QHBoxLayout()
         
@@ -103,9 +110,20 @@ class TimeSlotItem(QFrame):
         layout.addWidget(self.date_label)
         layout.addWidget(self.time_label)
         layout.addWidget(self.duration_label)
+        layout.addWidget(self.assignment_label)
         layout.addLayout(button_layout)
         
-        self.setMinimumHeight(75)  # Increased to accommodate buttons
+        self.setMinimumHeight(80)  # Increased to accommodate assignment indicator
+    
+    def set_has_assignments(self, has_assignments: bool):
+        """Set whether this time slot has assignments scheduled in it"""
+        self.has_assignments = has_assignments
+        self.assignment_label.setVisible(has_assignments)
+        
+        if has_assignments:
+            # Add a border to indicate this slot is being used
+            self.setStyleSheet(self.styleSheet() + "border: 2px solid #4CAF50;")
+            self.setToolTip("This time slot has scheduled assignments")
     
     def mousePressEvent(self, event):
         """Handle mouse press events for editing"""
@@ -120,6 +138,19 @@ class TimeSlotItem(QFrame):
     def delete_slot(self):
         """Delete this time slot"""
         if self.on_delete:
+            if self.has_assignments:
+                # Show warning before deleting a time slot with assignments
+                from PySide6.QtWidgets import QMessageBox
+                confirm = QMessageBox.warning(
+                    self,
+                    "Assignments Scheduled",
+                    "This time slot has assignments scheduled in it. Deleting it may affect your schedule.\n\nAre you sure you want to delete it?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No
+                )
+                if confirm != QMessageBox.Yes:
+                    return
+                    
             self.on_delete(self.time_slot)
 
 
@@ -129,6 +160,8 @@ class ScheduledAssignmentItem(QFrame):
     def __init__(self, scheduled_assignment: ScheduledAssignment, color_manager: ColorManager, parent=None):
         super().__init__(parent)
         self.scheduled_assignment = scheduled_assignment
+        self.overlapped_with_slot = False
+        self.overlapped_slot = None
         
         self.setFrameStyle(QFrame.Box | QFrame.Raised)
         self.setLineWidth(1)
@@ -138,8 +171,8 @@ class ScheduledAssignmentItem(QFrame):
         self.setStyleSheet(f"background-color: {color}; border-radius: 5px;")
         
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(3, 3, 3, 3)  # Reduced margins
-        layout.setSpacing(2)  # Reduced spacing
+        layout.setContentsMargins(3, 3, 3, 3)
+        layout.setSpacing(2)
         
         # Get session information
         session_duration = getattr(scheduled_assignment, 'session_duration', scheduled_assignment.expected_completion_time)
@@ -154,31 +187,48 @@ class ScheduledAssignmentItem(QFrame):
             assignment_name += f" (Session {session_number})"
             
         self.name_label = QLabel(assignment_name)
-        self.name_label.setFont(QFont("Arial", 8, QFont.Bold))  # Reduced font size
+        self.name_label.setFont(QFont("Arial", 8, QFont.Bold))
         self.name_label.setWordWrap(True)
         
         self.time_label = QLabel(f"⏰ {time_str}")
-        self.time_label.setFont(QFont("Arial", 8))  # Reduced font size
+        self.time_label.setFont(QFont("Arial", 8))
         
         self.duration_label = QLabel(f"⏱️ {format_duration(session_duration)}")
-        self.duration_label.setFont(QFont("Arial", 8))  # Reduced font size
+        self.duration_label.setFont(QFont("Arial", 8))
+        
+        # Overlap indicator (initially hidden)
+        self.overlap_label = QLabel("⚠️ In available time slot")
+        self.overlap_label.setFont(QFont("Arial", 7))
+        self.overlap_label.setStyleSheet("color: #FF5722;")
+        self.overlap_label.setVisible(False)
         
         # Add to layout
         layout.addWidget(self.name_label)
         layout.addWidget(self.time_label)
         layout.addWidget(self.duration_label)
+        layout.addWidget(self.overlap_label)
+    
+    def set_overlap_with_slot(self, time_slot: TimeSlot):
+        """Set that this assignment overlaps with a time slot"""
+        self.overlapped_with_slot = True
+        self.overlapped_slot = time_slot
+        self.overlap_label.setVisible(True)
+        
+        # Add a border to indicate this assignment uses an available time slot
+        self.setStyleSheet(self.styleSheet() + "border: 2px solid #4CAF50;")
 
 
 class DayWidget(QFrame):
     """Widget to display a single day in the calendar view"""
     
-    def __init__(self, date: datetime, parent=None, on_edit_slot=None, on_delete_slot=None):
+    def __init__(self, date: datetime, parent=None, on_edit_slot=None, on_delete_slot=None, show_hourly=False):
         super().__init__(parent)
         self.date = date
         self.scheduled_assignments = []
         self.time_slots = []
         self.on_edit_slot = on_edit_slot
         self.on_delete_slot = on_delete_slot
+        self.show_hourly = show_hourly
         
         self.setFrameStyle(QFrame.Box | QFrame.Sunken)
         self.setLineWidth(1)
@@ -190,47 +240,364 @@ class DayWidget(QFrame):
         elif date.weekday() >= 5:  # Weekend
             self.setStyleSheet("background-color: #f5f5f5;")  # Light grey for weekend
         
+        self.setup_ui()
+    
+    def setup_ui(self):
+        """Set up the user interface for the day widget"""
+        # Create layout
         self.layout = QVBoxLayout(self)
-        self.layout.setAlignment(Qt.AlignTop)
         self.layout.setContentsMargins(3, 3, 3, 3)
+        self.layout.setSpacing(3)
         
         # Day header
-        self.header = QLabel(date.strftime("%a, %b %d"))
+        self.header = QLabel(self.date.strftime("%a, %b %d"))
         self.header.setAlignment(Qt.AlignCenter)
         self.header.setFont(QFont("Arial", 9, QFont.Bold))
         
-        # Container for assignments and time slots
-        self.items_container = QWidget()
-        self.items_layout = QVBoxLayout(self.items_container)
-        self.items_layout.setAlignment(Qt.AlignTop)
-        self.items_layout.setContentsMargins(0, 0, 0, 0)
-        self.items_layout.setSpacing(3)
+        # Container for items
+        self.items_container = QScrollArea()
+        self.items_container.setWidgetResizable(True)
+        self.items_container.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         
-        # Scroll area
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setWidget(self.items_container)
-        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        if self.show_hourly:
+            # Create hourly view
+            self.hourly_widget = QWidget()
+            self.hourly_layout = QVBoxLayout(self.hourly_widget)
+            self.hourly_layout.setContentsMargins(0, 0, 0, 0)
+            self.hourly_layout.setSpacing(0)
+            self.hourly_layout.setAlignment(Qt.AlignTop)
+            
+            # Create a container for multi-hour items
+            self.multi_hour_widget = QWidget(self.hourly_widget)
+            self.multi_hour_widget.setStyleSheet("background-color: transparent;")
+            self.multi_hour_widget.setAttribute(Qt.WA_TransparentForMouseEvents, False)
+            
+            # The multi-hour widget will use an absolute positioning layout
+            self.multi_hour_widget.setLayout(QVBoxLayout())
+            self.multi_hour_widget.layout().setContentsMargins(0, 0, 0, 0)
+            self.multi_hour_widget.layout().setSpacing(0)
+            
+            # The hours dict will store references to each hour frame and its layout
+            self.hours = {}
+            
+            # Create hour slots (6 AM to 10 PM)
+            total_height = 0
+            for hour in range(6, 23):
+                hour_frame = QFrame()
+                hour_frame.setFrameStyle(QFrame.Box | QFrame.Plain)
+                hour_frame.setLineWidth(1)
+                hour_height = 60  # Height per hour
+                hour_frame.setFixedHeight(hour_height)
+                
+                # Set properties on the frame
+                hour_frame.setProperty("hour", hour)
+                hour_frame.setObjectName(f"hour_frame_{hour}")  # Set object name for styling
+                
+                hour_layout = QVBoxLayout(hour_frame)
+                hour_layout.setContentsMargins(2, 2, 2, 2)
+                hour_layout.setSpacing(1)
+                
+                # Add hour label to the frame
+                time_label = QLabel(f"{hour % 12 or 12} {('AM' if hour < 12 else 'PM')}")
+                time_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+                time_label.setFont(QFont("Arial", 7))
+                time_label.setStyleSheet("color: #888;")
+                hour_layout.addWidget(time_label)
+                
+                # Store the hour frame and layout in our dict
+                self.hours[hour] = {
+                    'frame': hour_frame,
+                    'layout': hour_layout,
+                    'y_position': total_height,  # Start of this hour in absolute coordinates
+                    'height': hour_height
+                }
+                
+                total_height += hour_height
+                self.hourly_layout.addWidget(hour_frame)
+            
+            # Configure the multi-hour widget to overlay the hour frames
+            self.multi_hour_widget.setGeometry(0, 0, self.hourly_widget.width(), total_height)
+            self.hourly_widget.resizeEvent = lambda e: self.multi_hour_widget.setGeometry(
+                0, 0, self.hourly_widget.width(), total_height
+            )
+            
+            self.items_container.setWidget(self.hourly_widget)
+        else:
+            # Use simple list view
+            self.list_widget = QWidget()
+            self.list_layout = QVBoxLayout(self.list_widget)
+            self.list_layout.setContentsMargins(0, 0, 0, 0)
+            self.list_layout.setSpacing(3)
+            self.list_layout.setAlignment(Qt.AlignTop)
+            
+            self.items_container.setWidget(self.list_widget)
         
         # Add to main layout
         self.layout.addWidget(self.header)
-        self.layout.addWidget(self.scroll_area)
+        self.layout.addWidget(self.items_container)
     
     def add_scheduled_assignment(self, scheduled_assignment: ScheduledAssignment, color_manager: ColorManager):
         """Add a scheduled assignment to this day"""
         self.scheduled_assignments.append(scheduled_assignment)
-        item = ScheduledAssignmentItem(scheduled_assignment, color_manager)
-        self.items_layout.addWidget(item)
+        
+        if self.show_hourly:
+            # Get the start time and duration
+            start_time = scheduled_assignment.assigned_date
+            duration = getattr(scheduled_assignment, 'session_duration', scheduled_assignment.expected_completion_time)
+            end_time = start_time + duration
+            
+            # Calculate which hour blocks this assignment spans
+            start_hour = start_time.hour
+            start_minute = start_time.minute
+            end_hour = end_time.hour
+            end_minute = end_time.minute
+            
+            if end_minute > 0 or end_time.second > 0:
+                end_hour += 1  # Include the last partial hour
+            
+            # If it spans multiple hours or has a specific minute offset, add it to the overlay widget
+            if (end_hour - start_hour > 1 or start_minute > 0) and start_hour >= 6 and start_hour < 23:
+                # Get color for the assignment
+                color = color_manager.get_color(scheduled_assignment.name)
+                
+                # Create a custom multi-hour item
+                container = QFrame(self.multi_hour_widget)
+                container.setFrameStyle(QFrame.Box | QFrame.Raised)
+                container.setLineWidth(1)
+                container.setStyleSheet(f"background-color: {color}; border-radius: 5px; border: 1px solid #666;")
+                
+                container_layout = QVBoxLayout(container)
+                container_layout.setContentsMargins(5, 5, 5, 5)
+                
+                # Get session information
+                session_number = getattr(scheduled_assignment, 'session_number', 1)
+                
+                # Format time
+                time_str = scheduled_assignment.assigned_date.strftime("%I:%M %p")
+                
+                # Create labels with reduced font size
+                assignment_name = scheduled_assignment.name
+                if session_number > 1:
+                    assignment_name += f" (Session {session_number})"
+                    
+                name_label = QLabel(assignment_name)
+                name_label.setFont(QFont("Arial", 9, QFont.Bold))
+                name_label.setStyleSheet("color: black;")
+                name_label.setWordWrap(True)
+                name_label.setAlignment(Qt.AlignCenter)
+                
+                time_label = QLabel(f"⏰ {time_str}")
+                time_label.setFont(QFont("Arial", 8))
+                time_label.setStyleSheet("color: black;")
+                
+                duration_label = QLabel(f"⏱️ {format_duration(duration)}")
+                duration_label.setFont(QFont("Arial", 8))
+                duration_label.setStyleSheet("color: black;")
+                
+                # Add to layout
+                container_layout.addWidget(name_label)
+                container_layout.addWidget(time_label)
+                container_layout.addWidget(duration_label)
+                container_layout.addStretch()
+                
+                # Calculate position and size
+                hour_info = self.hours.get(start_hour)
+                if hour_info:
+                    # Calculate precise position based on hour and minute
+                    y_position = hour_info['y_position'] + (start_minute / 60.0) * hour_info['height']
+                    
+                    # Calculate height based on duration in minutes
+                    duration_minutes = duration.total_seconds() / 60
+                    pixel_height = min(
+                        (duration_minutes / 60.0) * hour_info['height'],  # Height based on duration
+                        (23 - start_hour - (start_minute / 60.0)) * hour_info['height']  # Max visible height
+                    )
+                    
+                    # Set the position and size - use absolute positioning
+                    container.setFixedHeight(max(50, int(pixel_height)))  # Minimum height of 50px
+                    container.setGeometry(10, int(y_position), self.hourly_widget.width() - 20, int(pixel_height))
+                    container.show()  # Ensure it's visible
+            else:
+                # For single-hour items, add to the regular hour layout
+                # Find the correct hour to place this in
+                target_hour = max(6, min(22, start_hour))
+                hour_info = self.hours.get(target_hour)
+                
+                if hour_info:
+                    item = ScheduledAssignmentItem(scheduled_assignment, color_manager)
+                    hour_info['layout'].addWidget(item)
+        else:
+            # Simple list view - add normally
+            item = ScheduledAssignmentItem(scheduled_assignment, color_manager)
+            self.list_layout.addWidget(item)
     
     def add_time_slot(self, time_slot: TimeSlot):
-        """Add a time slot to this day"""
+        """Add a time slot to this day - only highlights the hour blocks that contain the time slot"""
         self.time_slots.append(time_slot)
-        item = TimeSlotItem(
-            time_slot,
-            on_edit=self.on_edit_slot,
-            on_delete=self.on_delete_slot
-        )
-        self.items_layout.addWidget(item)
+        
+        if self.show_hourly:
+            # Get the start time and duration
+            start_time = time_slot.start
+            duration = time_slot.duration
+            end_time = start_time + duration
+            
+            # More precise block highlighting calculation
+            duration_seconds = duration.total_seconds()
+            start_hour = start_time.hour
+            
+            # Create a list of hour blocks to highlight
+            hours_to_highlight = []
+            
+            # Exact hour calculation with special handling for one-hour slots
+            if 3540 <= duration_seconds <= 3660:  # ~1 hour (allow small margin for rounding)
+                # For 1-hour slots, only highlight the starting hour block
+                hours_to_highlight.append(start_hour)
+            else:
+                # For other slots, calculate which hours it spans
+                current_time = start_time
+                while current_time < end_time:
+                    if 6 <= current_time.hour < 23:  # Only highlight visible hours
+                        hours_to_highlight.append(current_time.hour)
+                    # Move to the next hour
+                    next_hour = current_time.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+                    if next_hour >= end_time:
+                        break
+                    current_time = next_hour
+            
+            # Highlight each hour block in our calculated list
+            for hour in hours_to_highlight:
+                if 6 <= hour < 23:  # Ensure we only highlight visible hours
+                    hour_info = self.hours.get(hour)
+                    if hour_info:
+                        # Change the background color of the hour frame to indicate a time slot
+                        hour_info['frame'].setStyleSheet("background-color: rgba(76, 175, 80, 0.2);")  # Light green with transparency
+                        
+                        # Add a tooltip to show the time slot info
+                        slot_time = start_time.strftime("%I:%M %p")
+                        slot_duration = format_duration(duration)
+                        hour_info['frame'].setToolTip(f"Available Time Slot: {slot_time}, Duration: {slot_duration}")
+                        
+                        # Store the time slot reference to allow editing
+                        hour_info['frame'].setProperty("time_slot", time_slot.id)
+                        
+                        # Enable context menu on right click
+                        hour_info['frame'].setContextMenuPolicy(Qt.CustomContextMenu)
+                        hour_info['frame'].customContextMenuRequested.connect(
+                            lambda pos, ts=time_slot: self.show_time_slot_context_menu(pos, ts)
+                        )
+    
+    def show_time_slot_context_menu(self, pos, time_slot):
+        """Show a context menu for the time slot when right-clicking on a highlighted hour"""
+        from PySide6.QtWidgets import QMenu
+        
+        menu = QMenu()
+        edit_action = menu.addAction("✏️ Edit Time Slot")
+        delete_action = menu.addAction("❌ Delete Time Slot")
+        
+        # Connect actions
+        edit_action.triggered.connect(lambda: self.on_edit_slot(time_slot) if self.on_edit_slot else None)
+        delete_action.triggered.connect(lambda: self.on_delete_slot(time_slot) if self.on_delete_slot else None)
+        
+        # Show the menu at the cursor position
+        menu.exec_(self.sender().mapToGlobal(pos))
+    
+    def has_assignment_in_slot(self, time_slot: TimeSlot) -> bool:
+        """Check if there's an assignment scheduled in this time slot"""
+        # Ensure we're comparing naive or aware datetimes consistently
+        slot_start = self.ensure_naive_datetime(time_slot.start)
+        slot_end = self.ensure_naive_datetime(slot_start + time_slot.duration)
+        
+        for assignment in self.scheduled_assignments:
+            assignment_start = self.ensure_naive_datetime(assignment.assigned_date)
+            session_duration = getattr(assignment, 'session_duration', assignment.expected_completion_time)
+            assignment_end = self.ensure_naive_datetime(assignment_start + session_duration)
+            
+            # Check for overlap - use a stricter overlap detection
+            if self.check_overlap(slot_start, slot_end, assignment_start, assignment_end):
+                return True
+        
+        return False
+    
+    @staticmethod
+    def check_overlap(slot_start, slot_end, assignment_start, assignment_end):
+        """Check if two time ranges overlap"""
+        # Check if there's any overlap at all
+        return max(slot_start, assignment_start) < min(slot_end, assignment_end)
+    
+    @staticmethod
+    def ensure_naive_datetime(dt: datetime) -> datetime:
+        """Ensure a datetime is naive (no timezone) to avoid comparison issues"""
+        if dt.tzinfo is not None:
+            return dt.replace(tzinfo=None)
+        return dt
+    
+    def clear_scheduled_assignments(self):
+        """Clear all scheduled assignments from this day"""
+        self.scheduled_assignments = []
+        self.clear_widgets(ScheduledAssignmentItem)
+    
+    def clear_time_slots(self):
+        """Clear all time slots from this day"""
+        self.time_slots = []
+        
+        # Reset the styling of all hour frames to remove the green highlighting
+        if self.show_hourly:
+            for hour_info in self.hours.values():
+                hour_info['frame'].setStyleSheet("")
+                hour_info['frame'].setToolTip("")
+        else:
+            # Clear from simple list
+            self.clear_widgets(TimeSlotItem)
+    
+    def clear_all(self):
+        """Clear all items from this day"""
+        self.scheduled_assignments = []
+        self.time_slots = []
+        
+        if self.show_hourly:
+            # Clear all hour layouts
+            for hour_info in self.hours.values():
+                layout = hour_info['layout']
+                # Remove all widgets from the hour layout except the hour label
+                for i in reversed(range(layout.count())):
+                    if i > 0:  # Keep the hour label (index 0)
+                        widget = layout.itemAt(i).widget()
+                        if widget:
+                            widget.setParent(None)
+                
+                # Reset the styling of the hour frame
+                hour_info['frame'].setStyleSheet("")
+                hour_info['frame'].setToolTip("")
+            
+            # Clear the multi-hour layout
+            while self.multi_hour_widget.layout().count():
+                widget = self.multi_hour_widget.layout().itemAt(0).widget()
+                if widget:
+                    widget.setParent(None)
+        else:
+            # Clear simple list
+            while self.list_layout.count():
+                widget = self.list_layout.itemAt(0).widget()
+                if widget:
+                    widget.setParent(None)
+    
+    def clear_widgets(self, widget_type):
+        """Clear widgets of a specific type from this day"""
+        if self.show_hourly:
+            # Clear from all hour layouts
+            for hour_info in self.hours.values():
+                layout = hour_info['layout']
+                # Remove widgets of the specified type
+                for i in reversed(range(layout.count())):
+                    widget = layout.itemAt(i).widget()
+                    if isinstance(widget, widget_type):
+                        widget.setParent(None)
+        else:
+            # Clear from simple list
+            for i in reversed(range(self.list_layout.count())):
+                widget = self.list_layout.itemAt(i).widget()
+                if isinstance(widget, widget_type):
+                    widget.setParent(None)
 
 
 class CalendarView(QWidget):
@@ -241,12 +608,41 @@ class CalendarView(QWidget):
         self.color_manager = ColorManager()
         self.on_edit_slot = on_edit_slot
         self.on_delete_slot = on_delete_slot
+        self.current_week_start = self.get_current_week_start()
         self.setup_ui()
+    
+    def get_current_week_start(self):
+        """Get the start date of the current week (Monday)"""
+        today = datetime.now()
+        return today - timedelta(days=today.weekday())
     
     def setup_ui(self):
         """Set up the user interface"""
         layout = QVBoxLayout(self)
         layout.setContentsMargins(5, 5, 5, 5)
+        
+        # Add week navigation controls
+        nav_layout = QHBoxLayout()
+        
+        self.prev_week_btn = QPushButton("◀ Previous Week")
+        self.prev_week_btn.clicked.connect(self.show_previous_week)
+        
+        self.today_btn = QPushButton("Today")
+        self.today_btn.clicked.connect(self.show_current_week)
+        
+        self.next_week_btn = QPushButton("Next Week ▶")
+        self.next_week_btn.clicked.connect(self.show_next_week)
+        
+        self.week_label = QLabel()
+        self.week_label.setAlignment(Qt.AlignCenter)
+        self.week_label.setFont(QFont("Arial", 12, QFont.Bold))
+        
+        nav_layout.addWidget(self.prev_week_btn)
+        nav_layout.addWidget(self.today_btn)
+        nav_layout.addWidget(self.week_label)
+        nav_layout.addWidget(self.next_week_btn)
+        
+        layout.addLayout(nav_layout)
         
         # Calendar grid
         self.grid_layout = QGridLayout()
@@ -260,34 +656,98 @@ class CalendarView(QWidget):
             label.setFont(QFont("Arial", 10, QFont.Bold))
             self.grid_layout.addWidget(label, 0, col)
         
-        # Create the calendar days (5 weeks)
+        # Create the calendar days (1 week)
         self.days = {}
-        today = datetime.now()
-        start_day = today - timedelta(days=today.weekday())  # Start from Monday
         
-        for week in range(5):
-            for day in range(7):
-                current_date = start_day + timedelta(days=7*week + day)
-                day_widget = DayWidget(
-                    current_date,
-                    on_edit_slot=self.on_edit_slot,
-                    on_delete_slot=self.on_delete_slot
-                )
-                self.grid_layout.addWidget(day_widget, week+1, day)
-                self.days[current_date.date()] = day_widget
-                
-                # Make column and row sizes even
-                self.grid_layout.setColumnMinimumWidth(day, 140)
-            
-            self.grid_layout.setRowMinimumHeight(week+1, 140)
+        # Create time header (hours)
+        hours_widget = QWidget()
+        hours_layout = QVBoxLayout(hours_widget)
+        hours_layout.setContentsMargins(0, 0, 0, 0)
+        hours_layout.setSpacing(0)
+        
+        # Add header spacer to align with day headers
+        header_spacer = QLabel("Time")
+        header_spacer.setAlignment(Qt.AlignCenter)
+        header_spacer.setFont(QFont("Arial", 10, QFont.Bold))
+        hours_layout.addWidget(header_spacer)
+        
+        # Add hours labels (6 AM to 10 PM)
+        for hour in range(6, 23):
+            hour_label = QLabel(f"{hour % 12 or 12} {('AM' if hour < 12 else 'PM')}")
+            hour_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            hour_label.setFont(QFont("Arial", 8))
+            hour_label.setFixedHeight(60)  # Height per hour
+            hours_layout.addWidget(hour_label)
+        
+        # Add hours column to grid
+        self.grid_layout.addWidget(hours_widget, 1, 0)
         
         # Set up the layout
         layout.addLayout(self.grid_layout)
+        
+        # Update the calendar with current week
+        self.update_calendar()
+    
+    def update_calendar(self):
+        """Update the calendar to show the current week"""
+        # Clear existing days
+        for day_widget in self.days.values():
+            day_widget.setParent(None)
+        self.days.clear()
+        
+        # Update week label
+        week_end = self.current_week_start + timedelta(days=6)
+        self.week_label.setText(
+            f"{self.current_week_start.strftime('%B %d')} - {week_end.strftime('%B %d, %Y')}"
+        )
+        
+        # Create new days for the week
+        for day in range(7):
+            current_date = self.current_week_start + timedelta(days=day)
+            day_widget = DayWidget(
+                current_date,
+                on_edit_slot=self.on_edit_slot,
+                on_delete_slot=self.on_delete_slot,
+                show_hourly=True  # Enable hourly view
+            )
+            self.grid_layout.addWidget(day_widget, 1, day + 1)  # +1 because hour labels are in column 0
+            self.days[current_date.date()] = day_widget
+            
+            # Make column sizes even
+            self.grid_layout.setColumnMinimumWidth(day + 1, 200)
+        
+        # Refresh the display if we have data
+        self.update_display()
+    
+    def update_display(self):
+        """Update the display with current assignments and time slots"""
+        for day_widget in self.days.values():
+            day_widget.clear_all()
+        
+        # First add all time slots (they'll just highlight the hours)
+        self.display_time_slots(getattr(self, '_time_slots', []))
+        
+        # Then add all scheduled assignments
+        self.display_scheduled_assignments(getattr(self, '_scheduled_assignments', []))
+    
+    def show_previous_week(self):
+        """Show the previous week"""
+        self.current_week_start -= timedelta(days=7)
+        self.update_calendar()
+    
+    def show_next_week(self):
+        """Show the next week"""
+        self.current_week_start += timedelta(days=7)
+        self.update_calendar()
+    
+    def show_current_week(self):
+        """Show the current week"""
+        self.current_week_start = self.get_current_week_start()
+        self.update_calendar()
     
     def display_scheduled_assignments(self, scheduled_assignments: List[ScheduledAssignment]):
         """Display scheduled assignments on the calendar"""
-        # Clear existing assignments
-        self.clear_scheduled_assignments()
+        self._scheduled_assignments = scheduled_assignments
         
         # Add new assignments
         for assignment in scheduled_assignments:
@@ -297,8 +757,7 @@ class CalendarView(QWidget):
     
     def display_time_slots(self, time_slots: List[TimeSlot]):
         """Display time slots on the calendar"""
-        # Clear existing time slots
-        self.clear_time_slots()
+        self._time_slots = time_slots
         
         # Add new time slots
         for slot in time_slots:
@@ -309,22 +768,14 @@ class CalendarView(QWidget):
     def clear_scheduled_assignments(self):
         """Clear all scheduled assignments from the calendar"""
         for day_widget in self.days.values():
-            for assignment in day_widget.scheduled_assignments:
-                for i in reversed(range(day_widget.items_layout.count())):
-                    widget = day_widget.items_layout.itemAt(i).widget()
-                    if isinstance(widget, ScheduledAssignmentItem):
-                        widget.setParent(None)
-            day_widget.scheduled_assignments = []
+            day_widget.clear_scheduled_assignments()
+        self._scheduled_assignments = []
     
     def clear_time_slots(self):
         """Clear all time slots from the calendar"""
         for day_widget in self.days.values():
-            for slot in day_widget.time_slots:
-                for i in reversed(range(day_widget.items_layout.count())):
-                    widget = day_widget.items_layout.itemAt(i).widget()
-                    if isinstance(widget, TimeSlotItem):
-                        widget.setParent(None)
-            day_widget.time_slots = []
+            day_widget.clear_time_slots()
+        self._time_slots = []
 
 
 class AssignmentDialog(QDialog):
@@ -585,11 +1036,37 @@ class MainWindow(QMainWindow):
         controls_layout = QHBoxLayout()
         controls_layout.setSpacing(10)
         
+        # Assignment controls group
+        assignment_group = QGroupBox("Assignments")
+        assignment_layout = QHBoxLayout(assignment_group)
+        
         self.add_assignment_button = QPushButton("Add Assignment")
         self.add_assignment_button.clicked.connect(self.add_assignment)
         
+        self.clear_assignments_button = QPushButton("Clear All Assignments")
+        self.clear_assignments_button.clicked.connect(self.clear_assignments)
+        self.clear_assignments_button.setStyleSheet("background-color: #FF9800; color: white;")
+        
+        assignment_layout.addWidget(self.add_assignment_button)
+        assignment_layout.addWidget(self.clear_assignments_button)
+        
+        # Time slots controls group
+        timeslot_group = QGroupBox("Time Slots")
+        timeslot_layout = QHBoxLayout(timeslot_group)
+        
         self.add_time_slot_button = QPushButton("Add Time Slot")
         self.add_time_slot_button.clicked.connect(self.add_time_slot)
+        
+        self.clear_time_slots_button = QPushButton("Clear All Time Slots")
+        self.clear_time_slots_button.clicked.connect(self.clear_time_slots)
+        self.clear_time_slots_button.setStyleSheet("background-color: #FF9800; color: white;")
+        
+        timeslot_layout.addWidget(self.add_time_slot_button)
+        timeslot_layout.addWidget(self.clear_time_slots_button)
+        
+        # Scheduling controls group
+        schedule_group = QGroupBox("Scheduling")
+        schedule_layout = QHBoxLayout(schedule_group)
         
         self.preferences_button = QPushButton("Preferences")
         self.preferences_button.clicked.connect(self.edit_preferences)
@@ -598,16 +1075,18 @@ class MainWindow(QMainWindow):
         self.schedule_button.clicked.connect(self.schedule_assignments)
         self.schedule_button.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
         
-        # Clear buttons
         self.clear_schedule_button = QPushButton("Clear Schedule")
         self.clear_schedule_button.clicked.connect(self.clear_schedule)
         self.clear_schedule_button.setStyleSheet("background-color: #f44336; color: white;")
         
-        controls_layout.addWidget(self.add_assignment_button)
-        controls_layout.addWidget(self.add_time_slot_button)
-        controls_layout.addWidget(self.preferences_button)
-        controls_layout.addWidget(self.schedule_button)
-        controls_layout.addWidget(self.clear_schedule_button)
+        schedule_layout.addWidget(self.preferences_button)
+        schedule_layout.addWidget(self.schedule_button)
+        schedule_layout.addWidget(self.clear_schedule_button)
+        
+        # Add control groups to main controls layout
+        controls_layout.addWidget(assignment_group)
+        controls_layout.addWidget(timeslot_group)
+        controls_layout.addWidget(schedule_group)
         
         # Calendar view
         self.calendar_view = CalendarView(
@@ -687,9 +1166,14 @@ class MainWindow(QMainWindow):
     @staticmethod
     def deserialize_assignment(data: Dict) -> Assignment:
         """Convert a dictionary to an Assignment object"""
+        dt = datetime.fromisoformat(data["due_date"])
+        # Ensure naive datetime to avoid comparison issues
+        if dt.tzinfo is not None:
+            dt = dt.replace(tzinfo=None)
+            
         return Assignment(
             name=data["name"],
-            due_date=datetime.fromisoformat(data["due_date"]),
+            due_date=dt,
             expected_completion_time=timedelta(seconds=data["expected_completion_time"])
         )
     
@@ -705,8 +1189,13 @@ class MainWindow(QMainWindow):
     @staticmethod
     def deserialize_time_slot(data: Dict) -> TimeSlot:
         """Convert a dictionary to a TimeSlot object"""
+        dt = datetime.fromisoformat(data["start"])
+        # Ensure naive datetime to avoid comparison issues
+        if dt.tzinfo is not None:
+            dt = dt.replace(tzinfo=None)
+            
         slot = TimeSlot(
-            start=datetime.fromisoformat(data["start"]),
+            start=dt,
             duration=timedelta(seconds=data["duration"])
         )
         
@@ -741,11 +1230,20 @@ class MainWindow(QMainWindow):
     @staticmethod
     def deserialize_scheduled_assignment(data: Dict) -> ScheduledAssignment:
         """Convert a dictionary to a ScheduledAssignment object"""
+        due_date = datetime.fromisoformat(data["due_date"])
+        assigned_date = datetime.fromisoformat(data["assigned_date"])
+        
+        # Ensure naive datetimes to avoid comparison issues
+        if due_date.tzinfo is not None:
+            due_date = due_date.replace(tzinfo=None)
+        if assigned_date.tzinfo is not None:
+            assigned_date = assigned_date.replace(tzinfo=None)
+            
         sa = ScheduledAssignment(
             name=data["name"],
-            due_date=datetime.fromisoformat(data["due_date"]),
+            due_date=due_date,
             expected_completion_time=timedelta(seconds=data["expected_completion_time"]),
-            assigned_date=datetime.fromisoformat(data["assigned_date"])
+            assigned_date=assigned_date
         )
         
         # Restore session information if available
@@ -826,10 +1324,39 @@ class MainWindow(QMainWindow):
     
     def delete_time_slot(self, time_slot: TimeSlot):
         """Delete a time slot"""
+        # Create a simplified version to check for overlap
+        has_assignments = False
+        
+        # Check if any assignments are scheduled in this time slot
+        for sa in self.scheduled_assignments:
+            slot_start = time_slot.start
+            slot_end = slot_start + time_slot.duration
+            assignment_start = sa.assigned_date
+            assignment_end = assignment_start + getattr(sa, 'session_duration', sa.expected_completion_time)
+            
+            # Make sure both are naive for comparison
+            if slot_start.tzinfo is not None:
+                slot_start = slot_start.replace(tzinfo=None)
+            if slot_end.tzinfo is not None:
+                slot_end = slot_end.replace(tzinfo=None)
+            if assignment_start.tzinfo is not None:
+                assignment_start = assignment_start.replace(tzinfo=None)
+            if assignment_end.tzinfo is not None:
+                assignment_end = assignment_end.replace(tzinfo=None)
+            
+            # Check for overlap using the helper method
+            if max(slot_start, assignment_start) < min(slot_end, assignment_end):
+                has_assignments = True
+                break
+                
+        confirm_text = "Are you sure you want to delete this time slot?"
+        if has_assignments:
+            confirm_text = "This time slot has assignments scheduled in it. Deleting it may affect your schedule.\n\nAre you sure you want to delete it?"
+            
         confirm = QMessageBox.question(
             self,
             "Confirm Deletion",
-            "Are you sure you want to delete this time slot?",
+            confirm_text,
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
@@ -868,14 +1395,84 @@ class MainWindow(QMainWindow):
             # Create scheduled assignments from the response
             self.scheduled_assignments = create_scheduled_assignments(result, self.assignments)
             
+            # Check for assignments that couldn't be scheduled within available time slots
+            total_assignments = len(self.assignments)
+            scheduled_assignment_names = set()
+            for sa in self.scheduled_assignments:
+                scheduled_assignment_names.add(sa.name)
+            
+            if len(scheduled_assignment_names) < len(self.assignments):
+                unscheduled = [a.name for a in self.assignments if a.name not in scheduled_assignment_names]
+                QMessageBox.warning(
+                    self,
+                    "Not All Assignments Scheduled",
+                    f"The following assignments could not be scheduled with the current time slots:\n\n" +
+                    "\n".join(f"• {name}" for name in unscheduled)
+                )
+                
             self.statusBar().showMessage(f"Scheduled {len(self.scheduled_assignments)} sessions")
             
             # Update the display
             self.update_display()
+            self.save_data()
             
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to schedule assignments: {str(e)}")
             self.statusBar().showMessage("Failed to schedule assignments")
+    
+    def clear_assignments(self):
+        """Clear all assignments"""
+        if not self.assignments:
+            return
+            
+        confirm = QMessageBox.question(
+            self, 
+            "Confirm Clear", 
+            "Are you sure you want to clear all assignments?\nThis will remove all unscheduled assignments.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if confirm == QMessageBox.Yes:
+            self.assignments = []
+            self.update_display()
+            self.statusBar().showMessage("All assignments cleared")
+            self.save_data()
+    
+    def clear_time_slots(self):
+        """Clear all time slots"""
+        if not self.time_slots:
+            return
+        
+        # Check if any assignments are scheduled
+        if self.scheduled_assignments:
+            warning = QMessageBox.warning(
+                self,
+                "Assignments Scheduled",
+                "You have assignments scheduled using these time slots. Clearing all time slots will also clear your schedule.\n\nDo you want to continue?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            
+            if warning != QMessageBox.Yes:
+                return
+                
+            # Clear scheduled assignments too
+            self.scheduled_assignments = []
+        
+        confirm = QMessageBox.question(
+            self, 
+            "Confirm Clear", 
+            "Are you sure you want to clear all time slots?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if confirm == QMessageBox.Yes:
+            self.time_slots = []
+            self.update_display()
+            self.statusBar().showMessage("All time slots cleared")
+            self.save_data()
     
     def clear_schedule(self):
         """Clear all scheduled assignments"""
