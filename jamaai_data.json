@@ -1,23 +1,54 @@
 {
-  "assignments": [],
-  "time_slots": [
+  "assignments": [
     {
-      "start": "2025-04-12T11:00:08.387000",
-      "duration": 3600.0,
-      "id": "65200bfc-b315-4ae4-8292-753453b19822"
-    },
-    {
-      "start": "2025-04-12T12:00:47.168000",
-      "duration": 3600.0,
-      "id": "7714b257-abe5-429c-9d30-1339e787c4c9"
-    },
-    {
-      "start": "2025-04-12T14:00:58.233000",
-      "duration": 3600.0,
-      "id": "fed9a2ea-8b66-499a-949a-22cd9e35dbbb"
+      "name": "STATS HW9",
+      "due_date": "2025-04-14T11:02:22.261000",
+      "expected_completion_time": 10800.0
     }
   ],
-  "scheduled_assignments": [],
+  "time_slots": [
+    {
+      "start": "2025-04-13T06:00:21.498000",
+      "duration": 3600.0,
+      "id": "d65b98a2-8d01-4344-884f-3459d0b9ae62"
+    },
+    {
+      "start": "2025-04-14T11:00:10.765000",
+      "duration": 7200.0,
+      "id": "835bf431-b66c-48a9-9a1e-7ea4bd5995c6"
+    },
+    {
+      "start": "2025-04-13T10:00:42.631000",
+      "duration": 7200.0,
+      "id": "2ed5e2fd-b964-4ceb-af46-432a3fb31fc6"
+    }
+  ],
+  "scheduled_assignments": [
+    {
+      "name": "STATS HW9",
+      "due_date": "2025-04-14T11:02:22.261000",
+      "expected_completion_time": 10800.0,
+      "assigned_date": "2025-04-13T06:00:21.498000",
+      "session_duration": 3600.0,
+      "session_number": 1
+    },
+    {
+      "name": "STATS HW9",
+      "due_date": "2025-04-14T11:02:22.261000",
+      "expected_completion_time": 10800.0,
+      "assigned_date": "2025-04-13T10:05:42.631000",
+      "session_duration": 5400.0,
+      "session_number": 2
+    },
+    {
+      "name": "STATS HW9",
+      "due_date": "2025-04-14T11:02:22.261000",
+      "expected_completion_time": 10800.0,
+      "assigned_date": "2025-04-14T11:00:10.765000",
+      "session_duration": 1800.0,
+      "session_number": 3
+    }
+  ],
   "preferences": {
     "min_study_length": 1800.0,
     "max_study_length": 5400.0,
