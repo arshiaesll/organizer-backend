@@ -2,10 +2,11 @@ from datetime import datetime, timedelta
 from typing import List
 import uuid
 class Assignment:
-    def __init__(self, name: str, due_date: datetime, expected_completion_time: timedelta):
+    def __init__(self, name: str, due_date: datetime, expected_completion_time: timedelta, completed: bool = False):
         self.name = name
         self.due_date = due_date
         self.expected_completion_time = expected_completion_time
+        self.completed = completed
 
 class ScheduledAssignment(Assignment):
     def __init__(self, name: str, due_date: datetime, expected_completion_time: timedelta, assigned_date: datetime):
